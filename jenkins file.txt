@@ -1,0 +1,44 @@
+
+node{
+   stage('SCM Checkout'){
+       git (url : 'https://github.com/dilshanikarunaratne/spacex-satellites', branch : 'main')
+   }
+   
+   stage('Mvn Package'){
+     def mvnHome = tool name: 'maven-3', type: 'maven'
+     def mvnCMD = "${mvnHome}/bin/mvn"
+     sh "${mvnCMD} -f Satellite/pom.xml clean package -DskipTests"
+   }
+   
+   stage('Build Docker Image'){
+     sh 'docker build -t dilshani96/services ./Satellite/'
+   }
+   stage('Push Docker Image'){
+     withCredentials([string(credentialsId: 'docker-pwd', variable: 'DockerHubPass')]) {
+     sh "docker login -u dilshani96 -p ${dockerHubPass}"
+     }
+     sh 'docker push dilshani96/services'
+   }
+   
+   stage('Deploy Production') {
+                ([$class: 'KubernetesEngineBuilder', 
+                        projectId: "total-platform-301611",
+                        clusterName: "cluster-satellites",
+                        zone: "us-central1-c",
+                        manifestPattern: 'k8s/production/',
+                        credentialsId: "gke-service-account",
+                        verifyDeployments: true])
+            
+   
+   
+   stage('Put docker.k8s-satservice.yaml onto k8sproduction') {
+            sshPut $class: $class, from: 'docker.k8s-satservice.yaml', into: '.'
+        }
+        
+    stage('Deploy spring boot') {
+          sshCommand $class: $class, command: "kubectl apply -f docker.k8s-satservice.yaml"
+        }
+   }
+   
+   
+}
